@@ -1,0 +1,9 @@
+apiVersion: migration.openshit.io/v1beta1
+kind: MigrationPlan
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: test
+spec:
+  # Add fields here
+  thing: hello-jonny
