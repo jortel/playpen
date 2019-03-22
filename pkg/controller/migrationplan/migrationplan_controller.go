@@ -19,9 +19,10 @@ package migrationplan
 import (
 	"context"
 	"fmt"
-	"reflect"
-
 	migrationv1beta1 "migration/pkg/apis/migration/v1beta1"
+	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,23 @@ func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileMigrationPlan{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
 
+type PlanUpdatedPredicate struct {
+	predicate.Funcs
+}
+
+func (r PlanUpdatedPredicate) Update(e event.UpdateEvent) bool {
+	planOld, cast := e.ObjectOld.(*migrationv1beta1.MigrationPlan)
+	if !cast {
+		return true
+	}
+	planNew, cast := e.ObjectNew.(*migrationv1beta1.MigrationPlan)
+	if !cast {
+		return true
+	}
+	changed := !reflect.DeepEqual(planOld.Spec, planNew.Spec)
+	return changed
+}
+
 // add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Create a new controller
@@ -66,17 +84,26 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to MigrationPlan
-	err = c.Watch(&source.Kind{Type: &migrationv1beta1.MigrationPlan{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(
+		&source.Kind{
+			Type: &migrationv1beta1.MigrationPlan{},
+		},
+		&handler.EnqueueRequestForObject{},
+		&PlanUpdatedPredicate{})
 	if err != nil {
 		return err
 	}
 
 	// TODO(user): Modify this to be the types you create
 	// Uncomment watch a Deployment created by MigrationPlan - change this for objects you create
-	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &migrationv1beta1.MigrationPlan{},
-	})
+	err = c.Watch(
+		&source.Kind{
+			Type: &appsv1.Deployment{},
+		},
+		&handler.EnqueueRequestForOwner{
+			IsController: true,
+			OwnerType:    &migrationv1beta1.MigrationPlan{},
+		})
 	if err != nil {
 		return err
 	}
@@ -102,9 +129,8 @@ type ReconcileMigrationPlan struct {
 // +kubebuilder:rbac:groups=migration.openshit.io,resources=migrationplans,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=migration.openshit.io,resources=migrationplans/status,verbs=get;update;patch
 func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile.Result, error) {
-	// Fetch the MigrationPlan instance
-	instance := &migrationv1beta1.MigrationPlan{}
-	err := r.Get(context.TODO(), request.NamespacedName, instance)
+	plan := &migrationv1beta1.MigrationPlan{}
+	err := r.Get(context.TODO(), request.NamespacedName, plan)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
@@ -115,21 +141,53 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 		return reconcile.Result{}, err
 	}
 
-	fmt.Printf("*** MIGRATION PLAN Thing=%s", instance.Spec.Thing)
+	err = r.reconcilePlan(plan)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 
-	// TODO(user): Change this to be the object type created by your controller
-	// Define the desired Deployment object
-	deploy := &appsv1.Deployment{
+	err = r.deployNginx(plan)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	err = r.deployService(plan)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	return reconcile.Result{}, nil
+}
+
+func (r *ReconcileMigrationPlan) reconcilePlan(plan *migrationv1beta1.MigrationPlan) error {
+	fmt.Printf("*** MIGRATION PLAN thing=%s\n", plan.Spec.Thing)
+	fmt.Printf("*** MIGRATION PLAN reconciled=%d\n", plan.Status.Reconciled)
+	plan.Status.Reconciled++
+	err := r.Update(context.TODO(), plan)
+	if err != nil {
+		fmt.Println("Increment failed.")
+	}
+	return err
+}
+
+func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPlan) error {
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      instance.Name + "-deployment",
-			Namespace: instance.Namespace,
+			Name:      plan.Name + "-deployment",
+			Namespace: plan.Namespace,
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"deployment": instance.Name + "-deployment"},
+				MatchLabels: map[string]string{
+					"deployment": plan.Name + "-deployment",
+				},
 			},
 			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"deployment": instance.Name + "-deployment"}},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"deployment": plan.Name + "-deployment",
+					},
+				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
@@ -141,36 +199,82 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 			},
 		},
 	}
-	if err := controllerutil.SetControllerReference(instance, deploy, r.scheme); err != nil {
-		return reconcile.Result{}, err
+	err := controllerutil.SetControllerReference(plan, dep, r.scheme)
+	if err != nil {
+		return err
 	}
 
-	// TODO(user): Change this for the object type created by your controller
-	// Check if the Deployment already exists
 	found := &appsv1.Deployment{}
 	err = r.Get(
 		context.TODO(),
-		types.NamespacedName{Name: deploy.Name, Namespace: deploy.Namespace},
+		types.NamespacedName{
+			Name:      dep.Name,
+			Namespace: dep.Namespace,
+		},
 		found)
 	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
-		err = r.Create(context.TODO(), deploy)
+		log.Info("Creating Deployment", "namespace", dep.Namespace, "name", dep.Name)
+		err = r.Create(context.TODO(), dep)
 		if err != nil {
-			return reconcile.Result{}, err
+			return err
 		}
 	} else if err != nil {
-		return reconcile.Result{}, err
+		return err
 	}
 
-	// TODO(user): Change this for the object type created by your controller
-	// Update the found object and write the result back if there are any changes
-	if !reflect.DeepEqual(deploy.Spec, found.Spec) {
-		found.Spec = deploy.Spec
-		log.Info("Updating Deployment", "namespace", deploy.Namespace, "name", deploy.Name)
+	if !reflect.DeepEqual(dep.Spec, found.Spec) {
+		found.Spec = dep.Spec
+		log.Info("Updating Deployment", "namespace", dep.Namespace, "name", dep.Name)
 		err = r.Update(context.TODO(), found)
 		if err != nil {
-			return reconcile.Result{}, err
+			return err
 		}
 	}
-	return reconcile.Result{}, nil
+	return nil
+}
+
+func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationPlan) error {
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      plan.Name + "-service",
+			Namespace: plan.Namespace,
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{
+				"deployment": plan.Name + "-deployment",
+			},
+			Ports: []corev1.ServicePort{
+				{Port: 8888},
+			},
+		},
+	}
+
+	found := &corev1.Service{}
+	err := r.Get(
+		context.TODO(),
+		types.NamespacedName{
+			Name:      service.Name,
+			Namespace: service.Namespace,
+		},
+		found)
+	if err != nil && errors.IsNotFound(err) {
+		log.Info("Creating Service", "namespace", service.Namespace, "name", service.Name)
+		err = r.Create(context.TODO(), service)
+		if err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	}
+
+	if !reflect.DeepEqual(service.Spec, found.Spec) {
+		found.Spec = service.Spec
+		log.Info("Updating Service", "namespace", service.Namespace, "name", service.Name)
+		err = r.Update(context.TODO(), found)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

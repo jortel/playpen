@@ -18,6 +18,7 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -34,6 +35,7 @@ type MigrationPlanSpec struct {
 type MigrationPlanStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	Reconciled int `json:"reconciled"`
 }
 
 // +genclient
@@ -47,6 +49,10 @@ type MigrationPlan struct {
 
 	Spec   MigrationPlanSpec   `json:"spec,omitempty"`
 	Status MigrationPlanStatus `json:"status,omitempty"`
+}
+
+func (p *MigrationPlan) GetObjectKind() schema.ObjectKind {
+	return p
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
