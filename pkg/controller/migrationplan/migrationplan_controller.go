@@ -21,6 +21,7 @@ import (
 	"fmt"
 	migrationv1beta1 "migration/pkg/apis/migration/v1beta1"
 	"reflect"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -32,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -199,13 +199,9 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 			},
 		},
 	}
-	err := controllerutil.SetControllerReference(plan, dep, r.scheme)
-	if err != nil {
-		return err
-	}
 
 	found := &appsv1.Deployment{}
-	err = r.Get(
+	err := r.Get(
 		context.TODO(),
 		types.NamespacedName{
 			Name:      dep.Name,
@@ -218,24 +214,28 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 		if err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
-	}
-
-	dirty := false
-	if !reflect.DeepEqual(found.Spec.Template.Spec, dep.Spec.Template.Spec) {
-		found.Spec.Template.Spec = dep.Spec.Template.Spec
-		dirty = true
-	}
-	if !reflect.DeepEqual(found.Spec.Selector, dep.Spec.Selector) {
-		found.Spec.Selector = dep.Spec.Selector
-		dirty = true
-	}
-	if dirty {
-		log.Info("Updating Deployment", "namespace", dep.Namespace, "name", dep.Name)
-		err = r.Update(context.TODO(), found)
+		err := controllerutil.SetControllerReference(plan, dep, r.scheme)
 		if err != nil {
 			return err
+		}
+	} else if err != nil {
+		return err
+	} else {
+		dirty := false
+		if !reflect.DeepEqual(found.Spec.Template.Spec, dep.Spec.Template.Spec) {
+			found.Spec.Template.Spec = dep.Spec.Template.Spec
+			dirty = true
+		}
+		if !reflect.DeepEqual(found.Spec.Selector, dep.Spec.Selector) {
+			found.Spec.Selector = dep.Spec.Selector
+			dirty = true
+		}
+		if dirty {
+			log.Info("Updating Deployment", "namespace", dep.Namespace, "name", dep.Name)
+			err = r.Update(context.TODO(), found)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -272,24 +272,28 @@ func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationP
 		if err != nil {
 			return err
 		}
-	} else if err != nil {
-		return err
-	}
-
-	dirty := false
-	if !reflect.DeepEqual(found.Spec.Selector, service.Spec.Selector) {
-		found.Spec.Selector = service.Spec.Selector
-		dirty = true
-	}
-	if !reflect.DeepEqual(found.Spec.Ports, service.Spec.Ports) {
-		found.Spec.Ports = service.Spec.Ports
-		dirty = true
-	}
-	if dirty {
-		log.Info("Updating Service", "namespace", service.Namespace, "name", service.Name)
-		err = r.Update(context.TODO(), found)
+		err := controllerutil.SetControllerReference(plan, service, r.scheme)
 		if err != nil {
 			return err
+		}
+	} else if err != nil {
+		return err
+	} else {
+		dirty := false
+		if !reflect.DeepEqual(found.Spec.Selector, service.Spec.Selector) {
+			found.Spec.Selector = service.Spec.Selector
+			dirty = true
+		}
+		if !reflect.DeepEqual(found.Spec.Ports, service.Spec.Ports) {
+			found.Spec.Ports = service.Spec.Ports
+			dirty = true
+		}
+		if dirty {
+			log.Info("Updating Service", "namespace", service.Namespace, "name", service.Name)
+			err = r.Update(context.TODO(), found)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
