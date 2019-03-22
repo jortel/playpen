@@ -222,14 +222,23 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 		return err
 	}
 
-	if !reflect.DeepEqual(dep.Spec, found.Spec) {
-		found.Spec = dep.Spec
+	dirty := false
+	if !reflect.DeepEqual(found.Spec.Template.Spec, dep.Spec.Template.Spec) {
+		found.Spec.Template.Spec = dep.Spec.Template.Spec
+		dirty = true
+	}
+	if !reflect.DeepEqual(found.Spec.Selector, dep.Spec.Selector) {
+		found.Spec.Selector = dep.Spec.Selector
+		dirty = true
+	}
+	if dirty {
 		log.Info("Updating Deployment", "namespace", dep.Namespace, "name", dep.Name)
 		err = r.Update(context.TODO(), found)
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -267,8 +276,16 @@ func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationP
 		return err
 	}
 
-	if !reflect.DeepEqual(service.Spec, found.Spec) {
-		found.Spec = service.Spec
+	dirty := false
+	if !reflect.DeepEqual(found.Spec.Selector, service.Spec.Selector) {
+		found.Spec.Selector = service.Spec.Selector
+		dirty = true
+	}
+	if !reflect.DeepEqual(found.Spec.Ports, service.Spec.Ports) {
+		found.Spec.Ports = service.Spec.Ports
+		dirty = true
+	}
+	if dirty {
 		log.Info("Updating Service", "namespace", service.Namespace, "name", service.Name)
 		err = r.Update(context.TODO(), found)
 		if err != nil {
