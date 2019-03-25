@@ -42,18 +42,10 @@ import (
 
 var log = logf.Log.WithName("controller")
 
-/**
-* USER ACTION REQUIRED: This is a scaffold file intended for the user to modify with their own Controller
-* business logic.  Delete these comments after modifying this file.*
- */
-
-// Add creates a new MigrationPlan Controller and adds it to the Manager with default RBAC. The Manager will set fields on the Controller
-// and Start it when the Manager is Started.
 func Add(mgr manager.Manager) error {
 	return add(mgr, newReconciler(mgr))
 }
 
-// newReconciler returns a new reconcile.Reconciler
 func newReconciler(mgr manager.Manager) reconcile.Reconciler {
 	return &ReconcileMigrationPlan{Client: mgr.GetClient(), scheme: mgr.GetScheme()}
 }
@@ -75,15 +67,12 @@ func (r PlanUpdatedPredicate) Update(e event.UpdateEvent) bool {
 	return changed
 }
 
-// add adds a new Controller to mgr with r as the reconcile.Reconciler
 func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	// Create a new controller
 	c, err := controller.New("migrationplan-controller", mgr, controller.Options{Reconciler: r})
 	if err != nil {
 		return err
 	}
 
-	// Watch for changes to MigrationPlan
 	err = c.Watch(
 		&source.Kind{
 			Type: &migrationv1beta1.MigrationPlan{},
@@ -94,8 +83,6 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 		return err
 	}
 
-	// TODO(user): Modify this to be the types you create
-	// Uncomment watch a Deployment created by MigrationPlan - change this for objects you create
 	err = c.Watch(
 		&source.Kind{
 			Type: &appsv1.Deployment{},
@@ -119,11 +106,6 @@ type ReconcileMigrationPlan struct {
 	scheme *runtime.Scheme
 }
 
-// Reconcile reads that state of the cluster for a MigrationPlan object and makes changes based on the state read
-// and what is in the MigrationPlan.Spec
-// TODO(user): Modify this Reconcile function to implement your Controller logic.  The scaffolding writes
-// a Deployment as an example
-// Automatically generate RBAC rules to allow the Controller to read and write Deployments
 // +kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=apps,resources=deployments/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=migration.openshit.io,resources=migrationplans,verbs=get;list;watch;create;update;patch;delete
@@ -133,12 +115,9 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 	err := r.Get(context.TODO(), request.NamespacedName, plan)
 	if err != nil {
 		if errors.IsNotFound(err) {
-			// Object not found, return.  Created objects are automatically garbage collected.
-			// For additional cleanup logic use finalizers.
 			fmt.Printf("Plan: %s, deleted\n", request.NamespacedName)
 			return reconcile.Result{}, nil
 		}
-		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
 
@@ -259,7 +238,7 @@ func (r *ReconcileMigrationPlan) reconcileService(plan *migrationv1beta1.Migrati
 				"deployment": plan.Name + "-deployment",
 			},
 			Ports: []corev1.ServicePort{
-				{Port: 8888},
+				{Port: 8080},
 			},
 		},
 	}
