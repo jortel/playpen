@@ -152,12 +152,10 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 		return reconcile.Result{}, err
 	}
 
-	/*
-		err = r.reconcileService(plan)
-		if err != nil {
-			return reconcile.Result{}, err
-		}
-	*/
+	err = r.reconcileService(plan)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 
 	return reconcile.Result{}, nil
 }
@@ -236,11 +234,11 @@ func (r *ReconcileMigrationPlan) reconcileDeployment(plan *migrationv1beta1.Migr
 	if errors.IsNotFound(err) {
 		// create
 		log.Info("Creating Deployment", "namespace", dep.Namespace, "name", dep.Name)
-		err := r.Create(context.TODO(), dep)
+		err := controllerutil.SetControllerReference(plan, dep, r.scheme)
 		if err != nil {
 			return err
 		}
-		err = controllerutil.SetControllerReference(plan, dep, r.scheme)
+		err = r.Create(context.TODO(), dep)
 		if err != nil {
 			return err
 		}
@@ -299,11 +297,11 @@ func (r *ReconcileMigrationPlan) reconcileService(plan *migrationv1beta1.Migrati
 	if errors.IsNotFound(err) {
 		// create
 		log.Info("Creating Service", "namespace", service.Namespace, "name", service.Name)
-		err := r.Create(context.TODO(), service)
+		err := controllerutil.SetControllerReference(plan, service, r.scheme)
 		if err != nil {
 			return err
 		}
-		err = controllerutil.SetControllerReference(plan, service, r.scheme)
+		err = r.Create(context.TODO(), service)
 		if err != nil {
 			return err
 		}
