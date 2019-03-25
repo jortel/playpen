@@ -135,6 +135,7 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 		if errors.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
 			// For additional cleanup logic use finalizers.
+			fmt.Printf("Plan: %s, deleted\n", request.NamespacedName)
 			return reconcile.Result{}, nil
 		}
 		// Error reading the object - requeue the request.
@@ -146,12 +147,12 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 		return reconcile.Result{}, err
 	}
 
-	err = r.deployNginx(plan)
+	err = r.reconcileDeployment(plan)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
-	err = r.deployService(plan)
+	err = r.reconcileService(plan)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -160,8 +161,8 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 }
 
 func (r *ReconcileMigrationPlan) reconcilePlan(plan *migrationv1beta1.MigrationPlan) error {
-	fmt.Printf("*** MIGRATION PLAN thing=%s\n", plan.Spec.Thing)
-	fmt.Printf("*** MIGRATION PLAN reconciled=%d\n", plan.Status.Reconciled)
+	log.Info("reconcilePlan()")
+	fmt.Printf("*** Thing=%s Count=%d\n", plan.Spec.Thing, plan.Status.Reconciled)
 	plan.Status.Reconciled++
 	err := r.Update(context.TODO(), plan)
 	if err != nil {
@@ -170,7 +171,7 @@ func (r *ReconcileMigrationPlan) reconcilePlan(plan *migrationv1beta1.MigrationP
 	return err
 }
 
-func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPlan) error {
+func (r *ReconcileMigrationPlan) reconcileDeployment(plan *migrationv1beta1.MigrationPlan) error {
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      plan.Name + "-deployment",
@@ -200,6 +201,8 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 		},
 	}
 
+	log.Info("reconcileDeployment()")
+
 	found := &appsv1.Deployment{}
 	err := r.Get(
 		context.TODO(),
@@ -208,19 +211,8 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 			Namespace: dep.Namespace,
 		},
 		found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Deployment", "namespace", dep.Namespace, "name", dep.Name)
-		err = r.Create(context.TODO(), dep)
-		if err != nil {
-			return err
-		}
-		err := controllerutil.SetControllerReference(plan, dep, r.scheme)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	} else {
+	if err == nil {
+		// update as needed.
 		dirty := false
 		if !reflect.DeepEqual(found.Spec.Template.Spec, dep.Spec.Template.Spec) {
 			found.Spec.Template.Spec = dep.Spec.Template.Spec
@@ -237,12 +229,26 @@ func (r *ReconcileMigrationPlan) deployNginx(plan *migrationv1beta1.MigrationPla
 				return err
 			}
 		}
+		return nil
 	}
-
-	return nil
+	if errors.IsNotFound(err) {
+		// create
+		log.Info("Creating Deployment", "namespace", dep.Namespace, "name", dep.Name)
+		err = r.Create(context.TODO(), dep)
+		if err != nil {
+			return err
+		}
+		err := controllerutil.SetControllerReference(plan, dep, r.scheme)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return err
+	}
 }
 
-func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationPlan) error {
+func (r *ReconcileMigrationPlan) reconcileService(plan *migrationv1beta1.MigrationPlan) error {
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      plan.Name + "-service",
@@ -258,6 +264,8 @@ func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationP
 		},
 	}
 
+	log.Info("reconcileService()")
+
 	found := &corev1.Service{}
 	err := r.Get(
 		context.TODO(),
@@ -266,19 +274,8 @@ func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationP
 			Namespace: service.Namespace,
 		},
 		found)
-	if err != nil && errors.IsNotFound(err) {
-		log.Info("Creating Service", "namespace", service.Namespace, "name", service.Name)
-		err = r.Create(context.TODO(), service)
-		if err != nil {
-			return err
-		}
-		err := controllerutil.SetControllerReference(plan, service, r.scheme)
-		if err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	} else {
+	if err == nil {
+		// update as needed.
 		dirty := false
 		if !reflect.DeepEqual(found.Spec.Selector, service.Spec.Selector) {
 			found.Spec.Selector = service.Spec.Selector
@@ -295,7 +292,21 @@ func (r *ReconcileMigrationPlan) deployService(plan *migrationv1beta1.MigrationP
 				return err
 			}
 		}
+		return nil
 	}
-
-	return nil
+	if errors.IsNotFound(err) {
+		// create
+		log.Info("Creating Service", "namespace", service.Namespace, "name", service.Name)
+		err = r.Create(context.TODO(), service)
+		if err != nil {
+			return err
+		}
+		err := controllerutil.SetControllerReference(plan, service, r.scheme)
+		if err != nil {
+			return err
+		}
+		return nil
+	} else {
+		return err
+	}
 }
