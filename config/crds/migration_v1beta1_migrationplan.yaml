@@ -28,10 +28,12 @@ spec:
           type: object
         spec:
           properties:
-            thing:
+            name:
               description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
                 Important: Run "make" to regenerate code after modifying this file'
               type: string
+            thing:
+              type: object
           type: object
         status:
           properties:

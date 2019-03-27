@@ -141,13 +141,29 @@ func (r *ReconcileMigrationPlan) Reconcile(request reconcile.Request) (reconcile
 
 func (r *ReconcileMigrationPlan) reconcilePlan(plan *migrationv1beta1.MigrationPlan) error {
 	log.Info("reconcilePlan()")
-	fmt.Printf("*** Thing=%s Count=%d\n", plan.Spec.Thing, plan.Status.Reconciled)
+	fmt.Printf("*** Name=%s Count=%d\n", plan.Spec.Name, plan.Status.Reconciled)
 	plan.Status.Reconciled++
 	err := r.Update(context.TODO(), plan)
 	if err != nil {
 		fmt.Println("Increment failed.")
+		return err
 	}
-	return err
+
+	// Validate deployment reference
+	ref := plan.Spec.Thing
+	deployment := appsv1.Deployment{}
+	name := types.NamespacedName{
+		Namespace: ref.Namespace,
+		Name:      ref.Name,
+	}
+	err = r.Get(context.TODO(), name, &deployment)
+	if err == nil {
+		fmt.Println(deployment)
+	} else {
+		fmt.Printf("Ref: %s not valid", ref)
+	}
+
+	return nil
 }
 
 func (r *ReconcileMigrationPlan) reconcileDeployment(plan *migrationv1beta1.MigrationPlan) error {

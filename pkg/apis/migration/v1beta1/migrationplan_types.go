@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
@@ -28,7 +29,8 @@ import (
 type MigrationPlanSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-	Thing string `json:"thing,omitempty"`
+	Name  string                 `json:"name,omitempty"`
+	Thing corev1.ObjectReference `json:"thing,omitempty"`
 }
 
 // MigrationPlanStatus defines the observed state of MigrationPlan
